@@ -15,6 +15,10 @@ class PrompterController extends ChangeNotifier {
   Timer? _countdownTimer;
   Timer? _autoScrollTimer;
 
+  // 键盘抗冲突防抖暂停定时器
+  Timer? _keyboardPauseTimer;
+  bool _isTemporarilyPausedByKeyboard = false;
+
   bool _isSpeechAvailable = false;
   bool _isListening = false;
   String _lastRecognizedWords = '';
@@ -30,6 +34,7 @@ class PrompterController extends ChangeNotifier {
   bool get isListening => _isListening;
   String get lastRecognizedWords => _lastRecognizedWords;
   String get speechErrorMessage => _speechErrorMessage;
+  bool get isTemporarilyPausedByKeyboard => _isTemporarilyPausedByKeyboard;
 
   String _scriptText = '';
 
@@ -39,8 +44,12 @@ class PrompterController extends ChangeNotifier {
   }
 
   // 键盘响应：平滑滚动指定距离 (delta > 0 向下，delta < 0 向上)
-  void scrollByDelta(double delta, {int durationMs = 180}) {
+  void scrollByDelta(double delta, {int durationMs = 180, int pauseMs = 500}) {
     if (!scrollController.hasClients) return;
+
+    // 暂停自动滚动 0.5s，防止与手动按键动画冲突
+    pauseTemporarilyForKeyboard(pauseMs: pauseMs);
+
     final currentOffset = scrollController.offset;
     final maxScroll = scrollController.position.maxScrollExtent;
     final targetOffset = (currentOffset + delta).clamp(0.0, maxScroll);
@@ -50,6 +59,18 @@ class PrompterController extends ChangeNotifier {
       duration: Duration(milliseconds: durationMs),
       curve: Curves.easeOutCubic,
     );
+  }
+
+  // 触发键盘防冲突暂停逻辑
+  void pauseTemporarilyForKeyboard({int pauseMs = 500}) {
+    _isTemporarilyPausedByKeyboard = true;
+    notifyListeners();
+
+    _keyboardPauseTimer?.cancel();
+    _keyboardPauseTimer = Timer(Duration(milliseconds: pauseMs), () {
+      _isTemporarilyPausedByKeyboard = false;
+      notifyListeners();
+    });
   }
 
   Future<void> initSpeech() async {
@@ -113,6 +134,8 @@ class PrompterController extends ChangeNotifier {
   void pause() {
     _countdownTimer?.cancel();
     _autoScrollTimer?.cancel();
+    _keyboardPauseTimer?.cancel();
+    _isTemporarilyPausedByKeyboard = false;
     if (_isListening) {
       _speechToText.stop();
     }
@@ -123,6 +146,8 @@ class PrompterController extends ChangeNotifier {
   void stop() {
     _countdownTimer?.cancel();
     _autoScrollTimer?.cancel();
+    _keyboardPauseTimer?.cancel();
+    _isTemporarilyPausedByKeyboard = false;
     if (_isListening) {
       _speechToText.stop();
     }
@@ -144,7 +169,10 @@ class PrompterController extends ChangeNotifier {
     _autoScrollTimer?.cancel();
     const interval = Duration(milliseconds: 16);
     _autoScrollTimer = Timer.periodic(interval, (timer) {
-      if (_state != PrompterState.playing || !scrollController.hasClients) {
+      // 若处于键盘事件临时暂停中，不进行时间驱动滚动，避免与用户按键冲突
+      if (_state != PrompterState.playing ||
+          !scrollController.hasClients ||
+          _isTemporarilyPausedByKeyboard) {
         return;
       }
       final maxScroll = scrollController.position.maxScrollExtent;
@@ -185,7 +213,11 @@ class PrompterController extends ChangeNotifier {
     _lastRecognizedWords = result.recognizedWords;
     notifyListeners();
 
-    if (_scriptText.isEmpty || !scrollController.hasClients) return;
+    if (_scriptText.isEmpty ||
+        !scrollController.hasClients ||
+        _isTemporarilyPausedByKeyboard) {
+      return;
+    }
 
     final recognized = result.recognizedWords.replaceAll(RegExp(r'\s+'), '');
     if (recognized.length < 2) return;
@@ -211,6 +243,7 @@ class PrompterController extends ChangeNotifier {
   void dispose() {
     _countdownTimer?.cancel();
     _autoScrollTimer?.cancel();
+    _keyboardPauseTimer?.cancel();
     scrollController.dispose();
     super.dispose();
   }

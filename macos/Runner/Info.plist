@@ -26,7 +26,9 @@
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
-	<key>NSPrincipalClass</key>
-	<string>NSApplication</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>需要访问语音识别权限以实现提词器 Smart Scroll 智能台词同步功能</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>需要访问麦克风以识别您的演讲声音并实时滑动台词</string>
 </dict>
 </plist>
